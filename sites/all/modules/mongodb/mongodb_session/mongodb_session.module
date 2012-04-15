@@ -1,0 +1,46 @@
+<?php
+/**
+ * @file
+ *   MongoDB Session implementation.
+ */
+
+/**
+ * Implements hook_simpletest_alter().
+ */
+function mongodb_session_simpletest_alter(&$groups) {
+  // An alternative session handler module would not want to run the original
+  // Session https handling test because it checks the sessions table in the
+  // database.
+  unset($groups['Session']);
+}
+
+function mongodb_session_user_update($edit, $account) {
+  if (!module_exists('mongodb_field_storage')) {
+    $roles = _mongodb_session_get_roles($account);
+    $save = (array) $account + array(
+      '_id' => (int) $account->uid,
+      '@bundle' => 'user',
+      '@fields' => array(),
+      'roles' => $roles,
+    );
+    foreach (array('uid', 'created', 'access', 'login', 'status', 'picture') as $key) {
+      $save[$key] = (int) $save[$key];
+    }
+    mongodb_collection('fields_current', 'user')->save($save);
+  }
+  return $roles;
+}
+
+function mongodb_session_user_insert($edit, $account) {
+  return mongodb_session_user_update($edit, $account);
+}
+
+function _mongodb_session_get_roles($account) {
+  $roles = array();
+  $roles[DRUPAL_AUTHENTICATED_RID] = 'authenticated user';
+  $result = db_query("SELECT r.rid, r.name, ur.uid FROM {role} r INNER JOIN {users_roles} ur ON ur.rid = r.rid WHERE ur.uid IN (:uids)", array(':uids' => array($account->uid)));
+  foreach ($result as $role) {
+    $roles[(int) $role->rid] = $role->name;
+  }
+  return $roles;
+}
